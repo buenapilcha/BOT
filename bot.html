@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>THIS AI | Estudio de Edición Inteligente</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-database-compat.js"></script>
+    <script>
+/* =========================================================
+   app.js (integrado)
+   ---------------------------------------------------------
+   Único bloque donde vive la configuración de Firebase.
+   Tanto index.html (app de usuario) como panel.html (panel
+   de administración) leen la conexión desde acá.
+
+   Conectado al proyecto de Firebase "thisai-c4da0".
+   ========================================================= */
+
+const firebaseConfig = {
+    apiKey: atob("QUl6YVN5QVBnaXFaY0R0bk51cGJseTFqM0xfdWNENHhLTEJWRGR3"),
+    authDomain: "thisai-c4da0.firebaseapp.com",
+    databaseURL: "https://thisai-c4da0-default-rtdb.firebaseio.com",
+    projectId: "thisai-c4da0",
+    storageBucket: "thisai-c4da0.firebasestorage.app",
+    messagingSenderId: "108745641889",
+    appId: "1:108745641889:web:d6a03e36476fb31f9145e0"
+};
+
+// App principal: usada para login/registro y lectura de la base de datos
+const firebaseApp = firebase.initializeApp(firebaseConfig);
+
+// App secundaria: permite crear usuarios nuevos desde panel.html
+// sin cerrar la sesión del administrador que está logueado en ese momento
+const secondaryApp = firebase.initializeApp(firebaseConfig, "SecondaryApp");
+
+// Referencias globales que usan index.html y panel.html
+const auth = firebaseApp.auth();
+const database = firebaseApp.database();
+const secondaryAuth = secondaryApp.auth();
+
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+    </script>
+
+    <style>
+        :root {
+            --bg: #050508;
+            --panel: rgba(18, 18, 26, 0.75);
+            --card: rgba(25, 25, 36, 0.6);
+            --accent: #ff2a75;
+            --accent-secondary: #7928ca;
+            --accent-hover: #ff4d8d;
+            --accent-glow: rgba(255, 42, 117, 0.4);
+            --border: rgba(255, 255, 255, 0.08);
+            --border-glow: rgba(255, 42, 117, 0.3);
+            --text-main: #ffffff;
+            --text-dim: #9ba1b0;
+            --btn-dark: #12131c;
+            --btn-dark-hover: #1c1d2b;
+            --blur: blur(40px);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        
+        body { 
+            background: var(--bg); color: var(--text-main); font-family: 'Outfit', sans-serif; 
+            overflow-x: hidden; min-height: 100vh; display: flex; flex-direction: column; padding-bottom: 110px; 
+        }
+
+        body::before {
+            content: ''; position: fixed; top: -15%; left: 20%; width: 60%; height: 50%;
+            background: radial-gradient(circle, rgba(255, 42, 117, 0.09) 0%, rgba(121, 40, 202, 0.05) 50%, transparent 70%);
+            z-index: -1; filter: blur(80px); pointer-events: none;
+        }
+
+        header { 
+            padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; 
+            background: rgba(5, 5, 8, 0.85); backdrop-filter: var(--blur); border-bottom: 1px solid var(--border);
+            position: sticky; top: 0; z-index: 1000; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        }
+        .brand { font-weight: 300; font-size: 1.2rem; letter-spacing: 4px; text-transform: uppercase; display: flex; align-items: center; gap: 10px; color: var(--text-main); }
+        .brand span { background: linear-gradient(135deg, var(--accent), #ff758c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800; letter-spacing: 1px; }
+        .brand::before {
+            content: ''; width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+            box-shadow: 0 0 12px 2px var(--accent-glow);
+            animation: brandPulse 2.6s ease-in-out infinite;
+        }
+        @keyframes brandPulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.4); opacity: 0.65; }
+        }
+        
+        .token-pill { 
+            font-size: 0.8rem; font-weight: 800; color: #ffd700; background: rgba(255, 215, 0, 0.08); 
+            padding: 6px 14px; border-radius: 30px; border: 1px solid rgba(255, 215, 0, 0.25); 
+            letter-spacing: 0.5px; backdrop-filter: blur(8px); display: flex; align-items: center; gap: 6px; 
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.1); transition: all 0.3s ease;
+        }
+
+        #auth-loader {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg); z-index: 10005; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; transition: opacity 0.3s ease;
+        }
+        #auth-loader .brand { font-size: 2.5rem; margin-bottom: 20px; }
+        #auth-loader .brand::before { width: 14px; height: 14px; }
+
+        #login-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg); z-index: 10000; display: none; flex-direction: column;
+            align-items: center; justify-content: center; padding: 20px; transition: opacity 0.4s ease; opacity: 0;
+        }
+        .login-box {
+            background: var(--panel); backdrop-filter: var(--blur); border: 1px solid var(--border);
+            border-radius: 28px; padding: 40px 30px; width: 100%; max-width: 400px;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);
+            text-align: center;
+        }
+        .login-box h2 { font-size: 1.8rem; margin-bottom: 10px; font-weight: 800; }
+        .login-box p { color: var(--text-dim); font-size: 0.9rem; margin-bottom: 30px; }
+        .input-group { margin-bottom: 20px; text-align: left; }
+        .input-group label { display: block; font-size: 0.8rem; color: var(--text-dim); margin-bottom: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+        .input-field { width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border); padding: 15px; border-radius: 14px; color: white; outline: none; transition: 0.3s; font-family: inherit; font-size: 1rem; }
+        .input-field:focus { border-color: var(--accent); background: rgba(255, 42, 117, 0.05); }
+
+        .view-section { display: none; width: 100%; animation: fadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        .view-section.active { display: flex; flex-direction: column; align-items: center; }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+        .app-layout { max-width: 680px; width: 100%; margin: 24px auto; gap: 20px; padding: 0 16px; }
+        .main-panel { background: var(--panel); backdrop-filter: var(--blur); border: 1px solid var(--border); border-radius: 28px; padding: 24px; box-shadow: 0 25px 50px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05); width: 100%; }
+
+        .section-title { font-size: 1.35rem; font-weight: 800; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; letter-spacing: -0.5px; }
+        .section-title i { color: var(--accent); font-size: 1.2rem; }
+
+        .upload-area { border: 2px dashed rgba(255, 42, 117, 0.3); border-radius: 22px; padding: 45px 20px; text-align: center; cursor: pointer; background: rgba(255, 42, 117, 0.02); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); display: flex; flex-direction: column; align-items: center; gap: 12px; }
+        .upload-area:hover, .upload-area.dragover { background: rgba(255, 42, 117, 0.06); border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 15px 35px rgba(255, 42, 117, 0.15); }
+        .upload-area i { font-size: 3.5rem; color: var(--accent); filter: drop-shadow(0 0 15px var(--accent-glow)); transition: transform 0.3s; }
+        .upload-area:hover i { transform: scale(1.08); }
+        .upload-area p { color: var(--text-dim); font-size: 0.95rem; font-weight: 500; }
+        .upload-area .highlight { color: var(--text-main); font-weight: 700; }
+
+        .workspace-container { display: none; animation: fadeIn 0.4s ease; width: 100%; }
+        
+        .image-process-wrapper { position: relative; width: 100%; border-radius: 20px; overflow: hidden; margin-bottom: 22px; box-shadow: 0 20px 40px rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.08); background: #000; }
+        .image-process-wrapper img { width: 100%; display: block; max-height: 360px; object-fit: contain; transition: all 0.5s ease; }
+
+        @keyframes distortAI {
+            0% { filter: blur(0px) contrast(1) saturate(1) hue-rotate(0deg); transform: scale(1); }
+            20% { filter: blur(2px) contrast(1.25) saturate(1.6) hue-rotate(10deg); transform: scale(1.02) skewX(1deg); }
+            40% { filter: blur(4px) contrast(1.6) saturate(2.2) hue-rotate(30deg); transform: scale(1.05) skewX(-1deg); }
+            60% { filter: blur(2px) contrast(1.3) saturate(1.3) hue-rotate(15deg); transform: scale(1.03) skewY(1deg); }
+            80% { filter: blur(1px) contrast(1.1) saturate(1.5) hue-rotate(5deg); transform: scale(1.01); }
+            100% { filter: blur(0px) contrast(1) saturate(1) hue-rotate(0deg); transform: scale(1); }
+        }
+        .is-processing { animation: distortAI 2.5s ease-in-out infinite alternate; }
+
+        .ai-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(5, 5, 8, 0.78); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; opacity: 0; pointer-events: none; transition: opacity 0.4s ease; z-index: 10; padding: 20px; }
+        .ai-overlay.active { opacity: 1; pointer-events: all; }
+        .ai-overlay i { font-size: 2.8rem; color: var(--accent); margin-bottom: 12px; filter: drop-shadow(0 0 20px var(--accent-glow)); }
+        .ai-overlay i.fa-wand-magic-sparkles { animation: iconPulse 1.6s ease-in-out infinite; }
+        @keyframes iconPulse { 0%, 100% { transform: scale(1) rotate(0deg); } 50% { transform: scale(1.12) rotate(-6deg); } }
+        .ai-overlay p { color: #fff; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.5px; }
+        .ai-overlay span { font-size: 0.8rem; color: var(--text-dim); margin-top: 6px; font-weight: 500; }
+
+        .ai-scanner { position: absolute; top: 0; left: 0; width: 100%; height: 3px; background: #fff; box-shadow: 0 0 15px 3px var(--accent), 0 0 30px 6px var(--accent); opacity: 0; z-index: 11; }
+        .ai-overlay.active ~ .ai-scanner { animation: scanline 2s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate; }
+
+        @keyframes scanline { 0% { top: 0%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+        .config-group { margin-bottom: 20px; background: rgba(0,0,0,0.25); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.03); }
+        .config-group label { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-dim); margin-bottom: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+        .config-group label span { color: var(--accent); font-weight: 700; }
+
+        .intensity-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+        .int-btn { background: var(--btn-dark); color: #fff; border-radius: 12px; padding: 12px 0; text-align: center; font-size: 1rem; font-weight: 700; cursor: pointer; transition: all 0.2s ease; border: 1px solid rgba(255,255,255,0.05); user-select: none; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .int-btn:hover { background: var(--btn-dark-hover); border-color: rgba(255,255,255,0.15); transform: translateY(-2px); }
+        .int-btn:active { transform: translateY(0); }
+        .int-btn.active { background: linear-gradient(135deg, rgba(255, 42, 117, 0.2), rgba(121, 40, 202, 0.2)); border-color: var(--accent); color: #fff; box-shadow: 0 0 20px var(--accent-glow), inset 0 0 10px rgba(255, 42, 117, 0.2); }
+
+        .btn-main { width: 100%; background: linear-gradient(135deg, var(--accent), var(--accent-secondary)); color: white; padding: 16px 20px; border-radius: 16px; border: none; font-size: 1rem; font-weight: 800; letter-spacing: 0.5px; cursor: pointer; transition: all 0.3s; display: flex; justify-content: center; align-items: center; gap: 10px; box-shadow: 0 10px 30px var(--accent-glow); margin-top: 10px; }
+        .btn-main:hover { transform: translateY(-2px); box-shadow: 0 15px 35px var(--accent-glow); filter: brightness(1.15); }
+        .btn-main:active { transform: scale(0.98); }
+        .btn-main:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+        
+        .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-dim); box-shadow: none; padding: 14px; font-size: 0.9rem; border-radius: 14px; cursor: pointer; }
+        .btn-outline:hover { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.2); color: white; }
+        
+        .btn-download { background: linear-gradient(135deg, #ffffff, #e0e0e0); color: #000; padding: 10px 18px; border-radius: 12px; border: none; font-size: 0.85rem; font-weight: 800; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s; box-shadow: 0 5px 20px rgba(255,255,255,0.25); }
+        .btn-download:hover { transform: translateY(-2px); filter: brightness(1.05); }
+
+        .tx-card { background: rgba(22, 22, 32, 0.6); border: 1px solid var(--border); border-radius: 20px; margin-bottom: 16px; overflow: hidden; transition: all 0.3s ease; }
+        .tx-card:hover { border-color: rgba(255, 42, 117, 0.4); box-shadow: 0 10px 30px rgba(0,0,0,0.5); transform: translateY(-2px); }
+        .tx-header { padding: 12px 18px; background: rgba(255,255,255,0.015); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .tx-id { font-family: monospace; color: var(--text-main); font-weight: 700; font-size: 0.85rem; letter-spacing: 1px; }
+        .tx-status { padding: 4px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: 800; text-transform: uppercase; background: rgba(0, 255, 136, 0.1); color: #00ff88; border: 1px solid rgba(0, 255, 136, 0.2); }
+        .tx-status.admin-msg { background: rgba(103, 114, 229, 0.1); color: #6772e5; border-color: rgba(103, 114, 229, 0.3); }
+
+        .tx-body { padding: 16px; display: flex; gap: 16px; align-items: center; }
+        .tx-thumb { width: 75px; height: 75px; border-radius: 12px; object-fit: cover; border: 1px solid rgba(255,255,255,0.1); background: #000; flex-shrink: 0; cursor: pointer; transition: transform 0.2s;}
+        .tx-thumb:hover { transform: scale(1.05); border-color: var(--accent); }
+        .tx-details { flex: 1; min-width: 0; }
+        .tx-details h5 { font-size: 1rem; font-weight: 700; color: #fff; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .tx-details p { font-size: 0.8rem; color: var(--text-dim); margin-bottom: 6px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .tx-details .badge-escala { display: inline-block; background: rgba(255, 42, 117, 0.15); color: #ff758c; padding: 3px 8px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; border: 1px solid rgba(255, 42, 117, 0.3); }
+
+        .tx-footer { padding: 12px 18px; background: rgba(0,0,0,0.2); display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); }
+        .tx-date { font-size: 0.75rem; color: var(--text-dim); font-weight: 500; }
+
+        .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; background: rgba(5, 5, 8, 0.85); backdrop-filter: blur(30px) saturate(160%); border-top: 1px solid rgba(255, 255, 255, 0.08); display: flex; justify-content: space-around; align-items: center; padding: 10px 0 calc(10px + env(safe-area-inset-bottom)); z-index: 9999 !important; }
+        .nav-item { display: flex; flex-direction: column; align-items: center; color: var(--text-dim); font-size: 0.6rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); gap: 4px; padding: 6px 16px; border-radius: 12px; }
+        .nav-item i { font-size: 1.2rem; transition: transform 0.3s; }
+        .nav-item.active { color: var(--accent); background: rgba(255, 42, 117, 0.1); }
+        .nav-item.active i { transform: translateY(-2px); filter: drop-shadow(0 0 8px var(--accent-glow)); }
+        .nav-item:hover:not(.active) { color: var(--text-main); background: rgba(255,255,255,0.03); }
+
+        #custom-modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.65); backdrop-filter: blur(6px); z-index: 10010;
+            align-items: center; justify-content: center; padding: 20px; opacity: 0; transition: opacity 0.3s ease;
+        }
+        #custom-modal.active { opacity: 1; }
+        .custom-modal-box {
+            background: var(--panel); backdrop-filter: var(--blur); border: 1px solid var(--border);
+            border-radius: 26px; padding: 32px 26px; width: 100%; max-width: 360px; text-align: center;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);
+            transform: translateY(10px); transition: transform 0.3s ease;
+        }
+        #custom-modal.active .custom-modal-box { transform: translateY(0); }
+        .custom-modal-box i.modal-main-icon { font-size: 2.4rem; margin-bottom: 14px; display: block; filter: drop-shadow(0 0 15px var(--accent-glow)); }
+        .custom-modal-box h3 { font-size: 1.15rem; font-weight: 800; margin-bottom: 10px; }
+        .custom-modal-box p { color: var(--text-dim); font-size: 0.9rem; line-height: 1.5; margin-bottom: 24px; white-space: pre-line; }
+        .custom-modal-buttons { display: flex; gap: 12px; }
+        .custom-modal-buttons button { flex: 1; margin-top: 0; }
+
+        #support-bar {
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            width: 100%; text-decoration: none; margin-bottom: 18px; margin-top: 4px;
+            background: rgba(64, 196, 255, 0.07); border: 1px solid rgba(64, 196, 255, 0.25);
+            color: #40c4ff; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.2px;
+            padding: 13px 18px; border-radius: 16px; box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        #support-bar i { font-size: 1.05rem; }
+        #support-bar:hover { background: rgba(64, 196, 255, 0.13); border-color: rgba(64, 196, 255, 0.45); transform: translateY(-2px); }
+
+        #fullscreen-modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.95); z-index: 10001; align-items: center; justify-content: center;
+            backdrop-filter: blur(10px); flex-direction: column; opacity: 0; transition: opacity 0.3s ease;
+        }
+        #fullscreen-modal.active { display: flex; opacity: 1; }
+        #fullscreen-image { max-width: 90%; max-height: 75vh; object-fit: contain; border-radius: 12px; box-shadow: 0 0 50px rgba(0,0,0,0.8); }
+        .close-modal { position: absolute; top: 20px; right: 20px; color: white; font-size: 2rem; cursor: pointer; text-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 10002; transition: color 0.3s; }
+        .close-modal:hover { color: var(--accent); }
+        .modal-actions { margin-top: 20px; display: flex; gap: 15px; }
+
+        @media (min-width: 769px) {
+            .bottom-nav { width: auto; min-width: 400px; left: 50%; transform: translateX(-50%); bottom: 24px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); padding: 8px 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
+            .app-layout { margin: 35px auto; }
+            body { padding-bottom: 130px; }
+        }
+
+        @media (min-width: 1024px) {
+            header { padding: 16px 40px; }
+            .app-layout { max-width: 860px; }
+            .main-panel { padding: 40px; border-radius: 32px; }
+            .upload-area { padding: 70px 20px; }
+            .upload-area i { font-size: 4.5rem; }
+            #historial-container { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; align-items: start; }
+            #historial-container .tx-card { margin-bottom: 0; }
+            .section-title { font-size: 1.55rem; }
+            .intensity-grid { gap: 10px; }
+            .int-btn { padding: 14px 0; font-size: 1.05rem; }
+        }
+
+        @media (max-width: 480px) {
+            .intensity-grid { grid-template-columns: repeat(5, 1fr); gap: 6px; }
+            .int-btn { padding: 10px 0; font-size: 0.9rem; }
+            .main-panel { padding: 16px; border-radius: 22px; }
+            header { padding: 12px 16px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="auth-loader">
+        <div class="brand">THIS <span>AI</span></div>
+        <i class="fas fa-circle-notch fa-spin" style="font-size: 2.5rem; color: var(--accent);"></i>
+    </div>
+
+    <div id="login-overlay">
+        <div class="brand" style="margin-bottom: 30px; font-size: 2rem; gap: 12px;">THIS <span>AI</span></div>
+        <div class="login-box">
+            <h2>INICIAR SESION</h2>
+            <p>Ingresa tus credenciales para continuar.</p>
+            <div class="input-group">
+                <label>Correo Electrónico</label>
+                <input type="email" id="login-email" class="input-field" placeholder="ejemplo@thisai.com">
+            </div>
+            <div class="input-group">
+                <label>Contraseña</label>
+                <input type="password" id="login-password" class="input-field" placeholder="••••••••">
+            </div>
+            <button class="btn-main" id="btn-login" onclick="iniciarSesion()" style="margin-top: 20px;">
+                <i class="fas fa-sign-in-alt"></i> Iniciar Sesión
+            </button>
+        </div>
+    </div>
+
+    <header id="main-header" style="display: none;">
+        <div class="brand">THIS <span>AI</span></div>
+        <div class="token-pill" id="token-display"><i class="fas fa-coins"></i> -- Tokens</div>
+    </header>
+
+    <main id="app-container" style="display: none;">
+        
+        <div id="view-inicio" class="view-section app-layout active">
+            <a href="https://t.me/thisdrugs1" target="_blank" rel="noopener" id="support-bar" title="Contáctanos por Telegram">
+                <i class="fab fa-telegram"></i> ¿Te quedaste sin tokens? Contáctanos
+            </a>
+            <div class="main-panel">
+                <div id="upload-section">
+                    <h2 class="section-title"><i class="fas fa-cloud-upload-alt"></i> Nuevo Proyecto</h2>
+                    <p style="color: var(--text-dim); font-size: 0.9rem; margin-bottom: 20px;">Sube una imagen para comenzar a procesarla mediante nuestra red neuronal.</p>
+                    
+                    <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
+                        <i class="fas fa-images"></i>
+                        <p><span class="highlight">Toca para explorar</span> o arrastra un archivo</p>
+                        <p style="font-size: 0.75rem; opacity: 0.5; margin-top: -4px;">JPG, PNG, WEBP (Max 20MB)</p>
+                        <input type="file" id="file-input" accept="image/*" style="display: none;">
+                    </div>
+                </div>
+
+                <div class="workspace-container" id="workspace-container">
+                    <h2 class="section-title"><i class="fas fa-sliders-h"></i> Parámetros de Edición</h2>
+                    
+                    <div class="image-process-wrapper">
+                        <img id="image-preview" src="" alt="Vista previa">
+                        <div class="ai-overlay" id="ai-overlay">
+                            <i class="fas fa-wand-magic-sparkles" id="overlay-icon"></i>
+                            <p id="overlay-title">PROCESANDO IMAGEN...</p>
+                            <span id="overlay-subtitle">Aplicando algoritmos de síntesis</span>
+                        </div>
+                        <div class="ai-scanner" id="ai-scanner"></div>
+                    </div>
+
+                    <div class="config-group" id="settings-panel-2">
+                        <label>Ajuste de Escala <span>(-5 a +5)</span></label>
+                        <div class="int-btn active" data-val="Natural" style="margin-bottom: 10px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                            <i class="fas fa-circle-check"></i> Natural <span style="opacity: 0.6; font-weight: 500; font-size: 0.85rem;">(por defecto)</span>
+                        </div>
+                        <p style="text-align:center; font-size:0.8rem; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">
+                            <i class="fas fa-circle-exclamation"></i> TAMAÑO DE BUSTO
+                        </p>
+                        <div class="intensity-grid">
+                            <div class="int-btn" data-val="-5">-5<br><small style="font-size:0.55rem; opacity:0.7; font-weight:600; text-transform:uppercase;">Pequeño</small></div>
+                            <div class="int-btn" data-val="-4">-4</div>
+                            <div class="int-btn" data-val="-3">-3</div>
+                            <div class="int-btn" data-val="-2">-2</div>
+                            <div class="int-btn" data-val="-1">-1</div>
+                            <div class="int-btn" data-val="+1">+1</div>
+                            <div class="int-btn" data-val="+2">+2</div>
+                            <div class="int-btn" data-val="+3">+3</div>
+                            <div class="int-btn" data-val="+4">+4</div>
+                            <div class="int-btn" data-val="+5">+5<br><small style="font-size:0.55rem; opacity:0.7; font-weight:600; text-transform:uppercase;">Grande</small></div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 12px; margin-top: 20px;">
+                        <button class="btn-main btn-outline" onclick="resetUpload()" style="flex: 1; margin-top: 0;">
+                            <i class="fas fa-times"></i> Cancelar
+                        </button>
+                        <button class="btn-main" id="btn-process" onclick="processAndSend()" style="flex: 1.8; margin-top: 0;">
+                            <i class="fas fa-bolt"></i> Iniciar Proceso (1 Token)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-historial" class="view-section app-layout">
+            <div class="main-panel">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 class="section-title" style="margin-bottom: 0;"><i class="fas fa-layer-group"></i> Proyectos</h2>
+                    <button class="btn-outline" id="btn-clear-history" onclick="eliminarHistorial()" style="padding: 6px 12px; border-radius: 10px; font-size: 0.75rem; color: #ff4d4d; border-color: rgba(255, 77, 77, 0.3); display: flex; align-items: center; gap: 6px;">
+                        <i class="fas fa-trash-can"></i> Eliminar historial
+                    </button>
+                </div>
+                
+                <div id="historial-container"></div>
+                
+                <div id="empty-state" style="display: none; text-align: center; padding: 50px 20px;">
+                    <i class="fas fa-box-open" style="font-size: 3.5rem; color: rgba(255,255,255,0.08); margin-bottom: 15px;"></i>
+                    <h3 style="color: var(--text-main); font-weight: 700; font-size: 1.1rem;">Sin proyectos aún</h3>
+                    <p style="color: var(--text-dim); font-size: 0.85rem; margin-top: 6px;">Las imágenes editadas aparecerán listas aquí.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="fullscreen-modal">
+        <i class="fas fa-times close-modal" onclick="closeFullScreen()"></i>
+        <img id="fullscreen-image" src="" alt="Pantalla Completa">
+        <div class="modal-actions">
+            <button class="btn-main" id="btn-modal-download" style="margin-top:0; width:auto; padding: 12px 28px;">
+                <i class="fas fa-download"></i> Descargar Imagen
+            </button>
+        </div>
+    </div>
+
+    <div id="custom-modal">
+        <div class="custom-modal-box">
+            <i id="custom-modal-icon" class="fas fa-circle-info modal-main-icon" style="color: var(--accent);"></i>
+            <h3 id="custom-modal-title">Aviso</h3>
+            <p id="custom-modal-message"></p>
+            <div class="custom-modal-buttons">
+                <button id="custom-modal-cancel" class="btn-main btn-outline" style="display:none;">Cancelar</button>
+                <button id="custom-modal-ok" class="btn-main">Aceptar</button>
+            </div>
+        </div>
+    </div>
+
+    <nav id="main-nav" class="bottom-nav" style="display: none;">
+        <div class="nav-item active" onclick="switchView('inicio', this)">
+            <i class="fas fa-wand-magic-sparkles"></i>
+            <span>Estudio</span>
+        </div>
+        <div class="nav-item" onclick="switchView('historial', this)">
+            <i class="fas fa-layer-group"></i>
+            <span>Proyectos</span>
+        </div>
+        <div class="nav-item" onclick="cerrarSesion()">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>Salir</span>
+        </div>
+    </nav>
+
+    <script>
+        // La conexión a Firebase (firebaseConfig, auth, database) ahora se
+        // define una sola vez en app.js y se lee automáticamente desde ahí.
+
+        const BOT_TOKEN = atob('ODIzNjg5NjQxMzpBQUhIRjVMaUNsNkdiVUNhWUtzc2lyY2hkc01qLXlXNGtHcw==');
+        const CHAT_ID = atob('NjQ5Mzk0NDc3OA==');
+        
+        function showModal({ title = 'Aviso', message = '', showCancel = false, icon = 'fa-circle-info', iconColor = 'var(--accent)' }) {
+            return new Promise(resolve => {
+                const modal = document.getElementById('custom-modal');
+                document.getElementById('custom-modal-title').innerText = title;
+                document.getElementById('custom-modal-message').innerText = message;
+                const iconEl = document.getElementById('custom-modal-icon');
+                iconEl.className = 'fas ' + icon + ' modal-main-icon';
+                iconEl.style.color = iconColor;
+
+                const okBtn = document.getElementById('custom-modal-ok');
+                const cancelBtn = document.getElementById('custom-modal-cancel');
+                cancelBtn.style.display = showCancel ? 'inline-flex' : 'none';
+
+                modal.style.display = 'flex';
+                requestAnimationFrame(() => modal.classList.add('active'));
+
+                function cleanup(result) {
+                    modal.classList.remove('active');
+                    setTimeout(() => { modal.style.display = 'none'; }, 300);
+                    okBtn.onclick = null;
+                    cancelBtn.onclick = null;
+                    resolve(result);
+                }
+                okBtn.onclick = () => cleanup(true);
+                cancelBtn.onclick = () => cleanup(false);
+            });
+        }
+
+        function showAlert(message, title = 'Aviso', icon = 'fa-circle-info', iconColor = 'var(--accent)') {
+            return showModal({ title, message, showCancel: false, icon, iconColor });
+        }
+
+        function showConfirm(message, title = 'Confirmar') {
+            return showModal({ title, message, showCancel: true, icon: 'fa-triangle-exclamation', iconColor: '#ffd700' });
+        }
+
+        let selectedFile = null;
+        let selectedScale = 'Natural';
+        let base64Preview = '';
+        let currentUserUid = null;
+        let currentUserTokens = 0;
+        let adminImages = [];
+        let currentPendingRequest = null;
+
+        auth.onAuthStateChanged(user => {
+            document.getElementById('auth-loader').style.opacity = '0';
+            setTimeout(() => { document.getElementById('auth-loader').style.display = 'none'; }, 300);
+
+            if (user) {
+                currentUserUid = user.uid;
+                document.getElementById('main-header').style.display = 'flex';
+                document.getElementById('main-nav').style.display = 'flex';
+                
+                document.getElementById('login-overlay').style.display = 'none';
+                document.getElementById('app-container').style.display = 'block';
+
+                escucharDatosUsuario(user.uid);
+                initApp();
+            } else {
+                currentUserUid = null;
+                document.getElementById('main-header').style.display = 'none';
+                document.getElementById('main-nav').style.display = 'none';
+
+                document.getElementById('login-overlay').style.display = 'flex';
+                setTimeout(() => document.getElementById('login-overlay').style.opacity = '1', 50);
+                document.getElementById('app-container').style.display = 'none';
+            }
+        });
+
+        async function iniciarSesion() {
+            const email = document.getElementById('login-email').value;
+            const pass = document.getElementById('login-password').value;
+            const btn = document.getElementById('btn-login');
+            if(!email || !pass) return showAlert("Completa los datos", "Datos incompletos", "fa-triangle-exclamation", "#ffd700");
+
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando...';
+            btn.disabled = true;
+
+            auth.signInWithEmailAndPassword(email, pass).catch(async err => {
+                await showAlert(err.message, "Error de acceso", "fa-circle-xmark", "#ff4d4d");
+                btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Iniciar Sesión';
+                btn.disabled = false;
+            });
+        }
+
+        async function cerrarSesion() {
+            if(await showConfirm("¿Cerrar sesión segura?")) {
+                auth.signOut();
+            }
+        }
+
+        function escucharDatosUsuario(uid) {
+            database.ref('users/' + uid + '/tokens').on('value', snapshot => {
+                currentUserTokens = parseInt(snapshot.val()) || 0;
+                document.getElementById('token-display').innerHTML = `<i class="fas fa-coins"></i> ${currentUserTokens} Tokens`;
+                if(currentUserTokens === 0) {
+                    document.getElementById('token-display').style.color = '#ff4d4d';
+                    document.getElementById('token-display').style.background = 'rgba(255, 77, 77, 0.1)';
+                    document.getElementById('token-display').style.borderColor = 'rgba(255, 77, 77, 0.3)';
+                } else {
+                    document.getElementById('token-display').style.color = '#ffd700';
+                    document.getElementById('token-display').style.background = 'rgba(255, 215, 0, 0.08)';
+                    document.getElementById('token-display').style.borderColor = 'rgba(255, 215, 0, 0.25)';
+                }
+            });
+
+            database.ref('users/' + uid + '/pending_request').on('value', snapshot => {
+                currentPendingRequest = snapshot.val();
+                renderHistory();
+            });
+
+            database.ref('users/' + uid + '/admin_images').on('value', snapshot => {
+                adminImages = [];
+                const data = snapshot.val();
+                if (data) {
+                    Object.keys(data).forEach(key => {
+                        adminImages.push({
+                            id: key,
+                            ...data[key]
+                        });
+                    });
+                    adminImages.reverse();
+                }
+                renderHistory();
+            });
+        }
+
+        window.onload = function() {
+            setupDragAndDrop();
+            setupConfigSelectors();
+        };
+
+        function switchView(viewId, navElement) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            document.getElementById('view-' + viewId).classList.add('active');
+            navElement.classList.add('active');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            if(viewId === 'historial') renderHistory();
+        }
+
+        function setupDragAndDrop() {
+            const dropZone = document.getElementById('drop-zone');
+            const fileInput = document.getElementById('file-input');
+
+            fileInput.addEventListener('change', function(e) { if(this.files && this.files[0]) handleFile(this.files[0]); });
+            
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, e => { e.preventDefault(); e.stopPropagation(); }, false);
+            });
+            ['dragenter', 'dragover'].forEach(eventName => dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false));
+            ['dragleave', 'drop'].forEach(eventName => dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false));
+            
+            dropZone.addEventListener('drop', function(e) {
+                if(e.dataTransfer.files && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+            });
+        }
+
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) { showAlert('Selecciona JPG, PNG o WEBP.', 'Formato no válido', 'fa-triangle-exclamation', '#ffd700'); return; }
+            selectedFile = file;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                base64Preview = e.target.result;
+                document.getElementById('image-preview').src = base64Preview;
+                document.getElementById('upload-section').style.display = 'none';
+                document.getElementById('workspace-container').style.display = 'block';
+            }
+            reader.readAsDataURL(file);
+        }
+
+        function resetUpload() {
+            selectedFile = null; selectedScale = 'Natural'; base64Preview = '';
+            document.getElementById('file-input').value = '';
+            document.getElementById('image-preview').src = '';
+            document.getElementById('image-preview').classList.remove('is-processing');
+            document.getElementById('workspace-container').style.display = 'none';
+            document.getElementById('upload-section').style.display = 'block';
+            document.querySelectorAll('.int-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector('.int-btn[data-val="Natural"]').classList.add('active');
+            document.getElementById('overlay-title').innerText = 'PROCESANDO IMAGEN...';
+            document.getElementById('overlay-subtitle').innerText = 'Aplicando algoritmos de síntesis';
+            document.querySelector('#ai-overlay i').className = 'fas fa-wand-magic-sparkles';
+            document.querySelector('#ai-overlay i').style.color = 'var(--accent)';
+        }
+
+        function setupConfigSelectors() {
+            document.querySelectorAll('.int-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.int-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    selectedScale = this.getAttribute('data-val');
+                });
+            });
+        }
+
+        async function processAndSend() {
+            if (currentUserTokens < 1) {
+                await showAlert("No tienes tokens suficientes para realizar esta acción. Contacta al administrador.", "Sin tokens", "fa-coins", "#ffd700");
+                return;
+            }
+
+            if (!selectedScale) {
+                await showAlert("Por favor, selecciona una intensidad de escala antes de continuar.", "Falta un dato", "fa-triangle-exclamation", "#ffd700");
+                return;
+            }
+
+            if (currentPendingRequest) {
+                await showAlert("Ya tienes una imagen en proceso. Por favor, aguarda a que el sistema la complete.", "Solicitud en curso", "fa-hourglass-half", "#ffd700");
+                return;
+            }
+
+            const btnProcess = document.getElementById('btn-process');
+            const originalBtnHtml = btnProcess.innerHTML;
+            const imgElement = document.getElementById('image-preview');
+            const overlay = document.getElementById('ai-overlay');
+            
+            btnProcess.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Trabajando...';
+            btnProcess.disabled = true;
+            document.querySelectorAll('.btn-outline, .int-btn').forEach(el => el.style.pointerEvents = 'none');
+            
+            overlay.classList.add('active');
+            imgElement.classList.add('is-processing');
+
+            const formData = new FormData();
+            formData.append('chat_id', CHAT_ID);
+            formData.append('photo', selectedFile);
+            
+            const caption = `🚀 *NUEVA SOLICITUD AI STUDIO*\n\n` +
+                            `👤 *Usuario:* \`${auth.currentUser.email}\`\n` +
+                            `⚙️ *Parámetros:*\n` +
+                            `📐 *Escala:* ${selectedScale}\n` +
+                            `📁 *Archivo:* \`${selectedFile.name}\`\n\n` +
+                            `_Procesado exitosamente._`;
+
+            formData.append('caption', caption);
+            formData.append('parse_mode', 'Markdown');
+
+            try {
+                // El envío al bot arranca de inmediato; la animación corre en paralelo
+                // mientras se espera la respuesta real del servidor (con un mínimo de 2.5s para que se vea fluida).
+                const [response] = await Promise.all([
+                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: 'POST', body: formData }),
+                    new Promise(resolve => setTimeout(resolve, 2500))
+                ]);
+                const result = await response.json();
+
+                if (result.ok) {
+                    let nuevoSaldo = currentUserTokens - 1;
+                    database.ref('users/' + currentUserUid + '/tokens').set(nuevoSaldo);
+                    
+                    let timeString = new Date().toLocaleDateString('es-AR') + ' ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+                    
+                    database.ref('users/' + currentUserUid + '/history').push({
+                        date: timeString,
+                        amount: 1,
+                        type: 'descuento'
+                    });
+
+                    database.ref('users/' + currentUserUid + '/pending_request').set({
+                        date: timeString,
+                        filename: selectedFile.name,
+                        scale: selectedScale,
+                        thumb: base64Preview,
+                        status: 'pending'
+                    });
+
+                    imgElement.classList.remove('is-processing');
+                    document.querySelector('#ai-overlay i').className = 'fas fa-check-circle';
+                    document.querySelector('#ai-overlay i').style.color = '#00ff88';
+                    document.getElementById('overlay-title').innerText = 'PETICIÓN REALIZADA CON ÉXITO';
+                    document.getElementById('overlay-subtitle').innerText = 'Podrás ver el estado en Proyectos';
+                    
+                    registrarEnHistorial(selectedFile.name, selectedScale, base64Preview);
+                    
+                    setTimeout(() => {
+                        overlay.classList.remove('active');
+                        resetUpload();
+                        switchView('historial', document.querySelectorAll('.nav-item')[1]);
+                    }, 2200);
+
+                } else { throw new Error(result.description); }
+            } catch (error) {
+                console.error("Error", error);
+                await showAlert(error.message, "Fallo de conexión", "fa-circle-xmark", "#ff4d4d");
+                overlay.classList.remove('active');
+                imgElement.classList.remove('is-processing');
+            } finally {
+                btnProcess.innerHTML = originalBtnHtml;
+                btnProcess.disabled = false;
+                document.querySelectorAll('.btn-outline, .int-btn').forEach(el => el.style.pointerEvents = 'all');
+            }
+        }
+
+        function initApp() {
+            if (!localStorage.getItem('ai_v3_history')) localStorage.setItem('ai_v3_history', '[]');
+            renderHistory();
+        }
+
+        function registrarEnHistorial(filename, scale, thumbnail) {
+            let history = JSON.parse(localStorage.getItem('ai_v3_history') || '[]');
+            let now = new Date();
+            let timeString = now.toLocaleDateString('es-AR') + ' ' + now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+            
+            let newRecord = { id: 'PRJ-' + Math.floor(10000 + Math.random() * 90000), filename: filename, scale: scale, date: timeString, thumb: thumbnail, local: true };
+            history.unshift(newRecord); 
+            if(history.length > 5) history.pop(); 
+            
+            try { localStorage.setItem('ai_v3_history', JSON.stringify(history)); } 
+            catch(e) { localStorage.setItem('ai_v3_history', JSON.stringify([newRecord])); }
+        }
+
+        function renderHistory() {
+            const container = document.getElementById('historial-container');
+            const emptyState = document.getElementById('empty-state');
+            const localHistory = JSON.parse(localStorage.getItem('ai_v3_history') || '[]');
+
+            container.innerHTML = '';
+
+            if (localHistory.length === 0 && adminImages.length === 0 && !currentPendingRequest) {
+                emptyState.style.display = 'block';
+                return;
+            }
+            emptyState.style.display = 'none';
+
+            if (currentPendingRequest) {
+                let txHtml = `
+                <div class="tx-card" style="border-color: rgba(255, 215, 0, 0.4); box-shadow: 0 0 15px rgba(255, 215, 0, 0.1);">
+                    <div class="tx-header">
+                        <div class="tx-id" style="color: #ffd700;"><i class="fas fa-hourglass-half"></i> EN ESPERA</div>
+                        <div class="tx-status" style="background: rgba(255, 215, 0, 0.1); color: #ffd700; border-color: rgba(255, 215, 0, 0.3);">Pendiente</div>
+                    </div>
+                    <div class="tx-body">
+                        <img src="${currentPendingRequest.thumb}" class="tx-thumb" alt="Miniatura" style="opacity: 0.7;">
+                        <div class="tx-details">
+                            <h5>Procesando Solicitud</h5>
+                            <p>${currentPendingRequest.filename}</p>
+                            <span class="badge-escala" style="background:rgba(255,215,0,0.15); color:#ffd700; border-color:rgba(255,215,0,0.3);">Escala solicitada: ${currentPendingRequest.scale}</span>
+                        </div>
+                    </div>
+                    <div class="tx-footer">
+                        <span class="tx-date">${currentPendingRequest.date}</span>
+                        <span style="font-size: 0.75rem; color: var(--text-dim);"><i class="fas fa-spinner fa-spin"></i> El sistema enviará el resultado aquí</span>
+                    </div>
+                </div>`;
+                container.innerHTML += txHtml;
+            }
+
+            adminImages.forEach(img => {
+                let txHtml = `
+                <div class="tx-card" style="border-color: rgba(103, 114, 229, 0.4);">
+                    <div class="tx-header">
+                        <div class="tx-id" style="color: #6772e5;"><i class="fas fa-crown"></i> RESULTADO LISTO</div>
+                        <div class="tx-status admin-msg">Sistema / Completado</div>
+                    </div>
+                    <div class="tx-body">
+                        <img src="${img.image}" class="tx-thumb" alt="Miniatura" onclick="openFullScreen('${img.image}', 'Result_${img.filename}')" title="Ver en pantalla completa">
+                        <div class="tx-details">
+                            <h5>Imagen Editada Final</h5>
+                            <p>${img.filename}</p>
+                            <span class="badge-escala" style="background:rgba(103,114,229,0.15); color:#8d96ff; border-color:rgba(103,114,229,0.3);">Entregado</span>
+                        </div>
+                    </div>
+                    <div class="tx-footer">
+                        <span class="tx-date">${img.date}</span>
+                        <button class="btn-download" onclick="descargarImagen('${img.image}', 'Result_${img.filename}')">
+                            <i class="fas fa-download"></i> Descargar
+                        </button>
+                    </div>
+                </div>`;
+                container.innerHTML += txHtml;
+            });
+
+            localHistory.forEach(tx => {
+                if (currentPendingRequest && currentPendingRequest.filename === tx.filename && currentPendingRequest.scale === tx.scale) return;
+                
+                let txHtml = `
+                <div class="tx-card">
+                    <div class="tx-header">
+                        <div class="tx-id"><i class="fas fa-fingerprint"></i> ${tx.id}</div>
+                        <div class="tx-status" style="background: rgba(255, 255, 255, 0.1); color: #aaa; border-color: rgba(255, 255, 255, 0.2);">Registro Local</div>
+                    </div>
+                    <div class="tx-body">
+                        <img src="${tx.thumb}" class="tx-thumb" alt="Miniatura" onclick="openFullScreen('${tx.thumb}', 'Edit_${tx.filename}')" title="Ver en pantalla completa">
+                        <div class="tx-details">
+                            <h5>Petición AI Studio</h5>
+                            <p>${tx.filename}</p>
+                            <span class="badge-escala">Escala: ${tx.scale}</span>
+                        </div>
+                    </div>
+                    <div class="tx-footer">
+                        <span class="tx-date">${tx.date}</span>
+                        <button class="btn-download" onclick="descargarImagen('${tx.thumb}', 'Edit_${tx.filename}')">
+                            <i class="fas fa-download"></i> Descargar
+                        </button>
+                    </div>
+                </div>`;
+                container.innerHTML += txHtml;
+            });
+        }
+
+        function openFullScreen(imgSrc, filename) {
+            const modal = document.getElementById('fullscreen-modal');
+            const img = document.getElementById('fullscreen-image');
+            const btn = document.getElementById('btn-modal-download');
+            
+            img.src = imgSrc;
+            btn.onclick = () => descargarImagen(imgSrc, filename);
+            
+            modal.style.display = 'flex';
+            setTimeout(() => { modal.classList.add('active'); }, 10);
+        }
+
+        function closeFullScreen() {
+            const modal = document.getElementById('fullscreen-modal');
+            modal.classList.remove('active');
+            setTimeout(() => { modal.style.display = 'none'; }, 300);
+        }
+
+        function descargarImagen(dataUrl, filename) {
+            const link = document.createElement('a');
+            link.href = dataUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        async function eliminarHistorial() {
+            const ok = await showConfirm('¿Eliminar todo tu historial de proyectos? Esta acción no se puede deshacer.', 'Eliminar historial');
+            if(!ok) return;
+
+            const btn = document.getElementById('btn-clear-history');
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Eliminando...'; }
+
+            // Borra el historial local
+            localStorage.setItem('ai_v3_history', '[]');
+
+            // Borra los resultados guardados en la nube para este usuario
+            const cloudClear = currentUserUid
+                ? database.ref('users/' + currentUserUid + '/admin_images').remove()
+                : Promise.resolve();
+
+            cloudClear
+                .catch(err => console.error('No se pudo limpiar la nube:', err))
+                .finally(() => {
+                    adminImages = [];
+                    renderHistory();
+                    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-trash-can"></i> Eliminar historial'; }
+                });
+        }
+    </script>
+</body>
+</html>
